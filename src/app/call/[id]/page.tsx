@@ -1,40 +1,48 @@
-'use client'
+'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import { useParams } from 'next/navigation'; // <-- Import useParams
 import { Button, Typography, Box, IconButton, Tooltip } from '@mui/material';
 import { Phone, PhoneOff, Mic, MicOff, Video, VideoOff } from 'lucide-react';
 
-export default function CallPage(props: any) {
-  const roomId = props.params?.id;
+export default function CallPage() {
+  // Grab the route param "id" using the useParams hook
+  const { id: roomId } = useParams();
+
   const [role, setRole] = useState<'user' | 'astrologer' | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const [isCallStarted, setIsCallStarted] = useState(false);
-  // New state variables for mic and camera
+
+  // States for mic and camera
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const localStreamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
+    // Determine if it's an astrologer or user by checking URL, or use any custom logic
     const isAstrologer = window.location.href.includes('/astrologer/');
     setRole(isAstrologer ? 'astrologer' : 'user');
 
-    // Get proper WebSocket URL based on environment
+    // Construct the WebSocket URL
     const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
     const wsUrl = baseUrl.replace('https://', 'wss://').replace('http://', 'ws://') + '/calls';
     console.log("Connecting to WebSocket:", wsUrl);
-    
+
     wsRef.current = new WebSocket(wsUrl);
+
     wsRef.current.onopen = () => {
       console.log('WebSocket Connected to', wsUrl);
-      wsRef.current?.send(JSON.stringify({
-        type: 'join',
-        roomId,
-        userId: Math.random().toString(36).substring(7),
-        role: isAstrologer ? 'astrologer' : 'user'
-      }));
+      wsRef.current?.send(
+        JSON.stringify({
+          type: 'join',
+          roomId,
+          userId: Math.random().toString(36).substring(7),
+          role: isAstrologer ? 'astrologer' : 'user'
+        })
+      );
     };
 
     wsRef.current.onmessage = async (event) => {
@@ -59,7 +67,7 @@ export default function CallPage(props: any) {
       }
       // Clean up local stream when component unmounts
       if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => track.stop());
+        localStreamRef.current.getTracks().forEach((track) => track.stop());
       }
     };
   }, [roomId]);
@@ -74,12 +82,14 @@ export default function CallPage(props: any) {
           await peerConnectionRef.current?.setRemoteDescription(new RTCSessionDescription(data.offer));
           const answer = await peerConnectionRef.current?.createAnswer();
           await peerConnectionRef.current?.setLocalDescription(answer);
-          wsRef.current?.send(JSON.stringify({
-            type: 'answer',
-            answer: answer,
-            roomId,
-            userId: Math.random().toString(36).substring(7)
-          }));
+          wsRef.current?.send(
+            JSON.stringify({
+              type: 'answer',
+              answer: answer,
+              roomId,
+              userId: Math.random().toString(36).substring(7)
+            })
+          );
           break;
 
         case 'answer':
@@ -101,9 +111,10 @@ export default function CallPage(props: any) {
 
   const startCall = async () => {
     try {
+      // Request audio + video
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       localStreamRef.current = stream;
-      
+
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
       }
@@ -113,37 +124,44 @@ export default function CallPage(props: any) {
       });
       peerConnectionRef.current = peerConnection;
 
-      stream.getTracks().forEach(track => {
+      // Add local tracks to RTCPeerConnection
+      stream.getTracks().forEach((track) => {
         peerConnection.addTrack(track, stream);
       });
 
+      // When remote stream arrives
       peerConnection.ontrack = (event) => {
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = event.streams[0];
         }
       };
 
+      // ICE Candidates
       peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-          wsRef.current?.send(JSON.stringify({
-            type: 'candidate',
-            candidate: event.candidate,
-            roomId,
-            userId: Math.random().toString(36).substring(7)
-          }));
+          wsRef.current?.send(
+            JSON.stringify({
+              type: 'candidate',
+              candidate: event.candidate,
+              roomId,
+              userId: Math.random().toString(36).substring(7)
+            })
+          );
         }
       };
 
-      // Only create offer if we're the initiator (user)
+      // If user, create offer
       if (role === 'user') {
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
-        wsRef.current?.send(JSON.stringify({
-          type: 'offer',
-          offer: offer,
-          roomId,
-          userId: Math.random().toString(36).substring(7)
-        }));
+        wsRef.current?.send(
+          JSON.stringify({
+            type: 'offer',
+            offer: offer,
+            roomId,
+            userId: Math.random().toString(36).substring(7)
+          })
+        );
       }
 
       setIsCallStarted(true);
@@ -156,17 +174,17 @@ export default function CallPage(props: any) {
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
     }
-    
-    // Stop all local tracks
+
+    // Stop local tracks
     if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current.getTracks().forEach((track) => track.stop());
     }
-    
+
     wsRef.current?.close();
     setIsCallStarted(false);
   };
 
-  // New function to toggle microphone
+  // Toggle microphone
   const toggleMic = () => {
     if (localStreamRef.current) {
       const audioTracks = localStreamRef.current.getAudioTracks();
@@ -178,7 +196,7 @@ export default function CallPage(props: any) {
     }
   };
 
-  // New function to toggle camera
+  // Toggle camera
   const toggleVideo = () => {
     if (localStreamRef.current) {
       const videoTracks = localStreamRef.current.getVideoTracks();
@@ -202,9 +220,15 @@ export default function CallPage(props: any) {
         </Typography>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white/80 backdrop-blur-sm rounded-xl p-6 shadow-lg">
+          {/* Local video */}
           <div className="relative bg-black rounded-lg overflow-hidden h-64 md:h-80">
-            <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-            
+            <video
+              ref={localVideoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover"
+            />
             {/* Camera off overlay */}
             {isVideoOff && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/80">
@@ -214,8 +238,7 @@ export default function CallPage(props: any) {
                 </div>
               </div>
             )}
-            
-            {/* Visual indicators for muted/video off */}
+            {/* Mic/Video indicators */}
             <div className="absolute top-2 right-2 flex gap-2">
               {isMuted && (
                 <div className="bg-red-500 p-1 rounded-full">
@@ -228,24 +251,26 @@ export default function CallPage(props: any) {
                 </div>
               )}
             </div>
-            
             <div className="absolute bottom-0 left-0 right-0 bg-black/50 p-2">
               <Typography className="text-white font-medium">You</Typography>
             </div>
           </div>
-          
+
+          {/* Remote video */}
           <div className="relative bg-black rounded-lg overflow-hidden h-64 md:h-80">
-            <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
+            <video
+              ref={remoteVideoRef}
+              autoPlay
+              playsInline
+              className="w-full h-full object-cover"
+            />
             <div className="absolute bottom-0 left-0 right-0 bg-black/50 p-2">
               <Typography className="text-white font-medium">Remote User</Typography>
             </div>
-            
             {/* Connection pending overlay */}
             {!isCallStarted && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/70">
-                <Typography className="text-white">
-                  Waiting to start call...
-                </Typography>
+                <Typography className="text-white">Waiting to start call...</Typography>
               </div>
             )}
           </div>
@@ -253,10 +278,10 @@ export default function CallPage(props: any) {
 
         <Box className="flex flex-wrap justify-center mt-6 gap-3">
           {!isCallStarted ? (
-            <Button 
-              variant="contained" 
-              color="success" 
-              onClick={startCall} 
+            <Button
+              variant="contained"
+              color="success"
+              onClick={startCall}
               startIcon={<Phone />}
               className="py-3 px-6"
             >
@@ -264,32 +289,32 @@ export default function CallPage(props: any) {
             </Button>
           ) : (
             <>
-              <Tooltip title={isMuted ? "Unmute" : "Mute"}>
-                <IconButton 
-                  onClick={toggleMic} 
-                  color={isMuted ? "error" : "primary"}
+              <Tooltip title={isMuted ? 'Unmute' : 'Mute'}>
+                <IconButton
+                  onClick={toggleMic}
+                  color={isMuted ? 'error' : 'primary'}
                   className="bg-white/80 backdrop-blur-sm shadow-md"
                   size="large"
                 >
                   {isMuted ? <MicOff /> : <Mic />}
                 </IconButton>
               </Tooltip>
-              
-              <Tooltip title={isVideoOff ? "Turn on video" : "Turn off video"}>
-                <IconButton 
-                  onClick={toggleVideo} 
-                  color={isVideoOff ? "error" : "primary"}
+
+              <Tooltip title={isVideoOff ? 'Turn on video' : 'Turn off video'}>
+                <IconButton
+                  onClick={toggleVideo}
+                  color={isVideoOff ? 'error' : 'primary'}
                   className="bg-white/80 backdrop-blur-sm shadow-md"
                   size="large"
                 >
                   {isVideoOff ? <VideoOff /> : <Video />}
                 </IconButton>
               </Tooltip>
-              
-              <Button 
-                variant="contained" 
-                color="error" 
-                onClick={endCall} 
+
+              <Button
+                variant="contained"
+                color="error"
+                onClick={endCall}
                 startIcon={<PhoneOff />}
                 className="py-3 px-6"
               >

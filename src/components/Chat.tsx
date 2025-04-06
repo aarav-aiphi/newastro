@@ -57,6 +57,8 @@ export function Chat({
     isAstrologer, 
     roomId || undefined
   );
+  console.log("Logged in user ID:", user?._id);
+
   const { uploadFile } = useFileUpload();
   const [lastMessage, setLastMessage] = useState<string>('');
   const router = useRouter();

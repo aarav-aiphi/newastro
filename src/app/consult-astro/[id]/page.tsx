@@ -1,14 +1,14 @@
-'use client'
+'use client';
 
-import React from 'react';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { BackgroundBeams } from '@/components/ui/background-beams';
 import { format } from 'date-fns';
 import { useAuth } from '@/hooks/useAuth';
 import { Chat } from '@/components/Chat';
 import { SparklesCore } from '@/components/ui/sparkles';
 import { Alert } from '@mui/material';
+import { BackgroundBeams } from '@/components/ui/background-beams';
 
 interface ChatSession {
   sessionId: string;
@@ -29,79 +29,120 @@ interface AstrologerDetails {
   profileImage?: string;
 }
 
-// Using a simple type assertion approach that works across Next.js versions
-export default function ConsultAstro(props: any) {
-  // Access id from props.params
-  const id = props.params?.id;
+export default function ConsultAstro() {
+  // 1) Get the astrologer ID from the URL
+  const { id } = useParams();
+
+  // 2) Access current user & loading state from your auth hook
+  const { user, loading } = useAuth();
+
+  // 3) Local states
+  const [astrologer, setAstrologer] = useState<AstrologerDetails | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoadingAstrologer, setIsLoadingAstrologer] = useState(true);
 
   const [chatHistory, setChatHistory] = useState<ChatSession[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
-  const [astrologer, setAstrologer] = useState<AstrologerDetails | null>(null);
-  const [isLoadingAstrologer, setIsLoadingAstrologer] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const { user, loading } = useAuth();
 
+  // 4) Fetch astrologer details & chat history
   useEffect(() => {
+    // A. Fetch single astrologer via /api/astrologers/:id
     const fetchAstrologerDetails = async () => {
-      if (!user) return;
+      if (!user || !id) return;
+      setIsLoadingAstrologer(true);
 
       try {
         const token = localStorage.getItem('token');
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/astrologers/${id}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
+        const response = await fetch(
+          `http://localhost:3001/api/astrologers/${id}`, // IMPORTANT: Matches your backend route
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
           }
-        });
+        );
 
         if (!response.ok) {
           throw new Error('Failed to fetch astrologer details');
         }
 
         const data = await response.json();
-        setAstrologer(data);
-      } catch (err) {
+        // This route returns: { success: boolean, astrologer: {...} }
+        if (data.success && data.astrologer) {
+          setAstrologer(data.astrologer);
+        } else {
+          throw new Error(data.error || 'Astrologer not found');
+        }
+      } catch (err: any) {
         console.error('Error fetching astrologer:', err);
-        setError('Failed to load astrologer details');
+        setError(err.message);
       } finally {
         setIsLoadingAstrologer(false);
       }
     };
 
+    // B. Fetch chat history via /api/chat/get-messages/:roomId
     const fetchChatHistory = async () => {
-      if (!user) return;
+      if (!user || !id) return;
+      setIsLoadingHistory(true);
 
       try {
         const token = localStorage.getItem('token');
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/chat/history/${id}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
+        // The same roomId logic used by your `useChat` hook
+        const roomId = [user._id.trim(), id.trim()].sort().join('_');
+
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/api/chat/get-messages/${roomId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
           }
-        });
+        );
 
         if (!response.ok) {
           throw new Error('Failed to fetch chat history');
         }
 
         const data = await response.json();
-        if (data.success) {
-          setChatHistory(data.sessions);
+        // Returns: { success: boolean, messages: [...] }
+        if (data.success && data.messages) {
+          // Transform the raw messages to your local shape
+          const transformedMessages = data.messages.map((msg: any) => ({
+            id: msg._id,
+            text: msg.message,
+            senderId: msg.senderId,
+            timestamp: msg.timestamp,
+          }));
+
+          setChatHistory([
+            {
+              sessionId: roomId,
+              startTime: '',
+              endTime: '',
+              duration: 0,
+              messages: transformedMessages,
+            },
+          ]);
         } else {
           throw new Error(data.message || 'Failed to fetch chat history');
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Error fetching chat history:', err);
-        setError('Failed to load chat history');
+        setError(err.message);
       } finally {
         setIsLoadingHistory(false);
       }
     };
 
-    if (user) {
+    // Only fetch if logged in & we have `id`
+    if (user && id) {
       fetchAstrologerDetails();
       fetchChatHistory();
     }
-  }, [id, user]);
+  }, [user, id]);
 
+  // 5) Loading & Auth Checks
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen bg-gradient-to-br from-sacred-chandan via-white to-sacred-haldi/10">
@@ -127,13 +168,18 @@ export default function ConsultAstro(props: any) {
     return (
       <div className="flex justify-center items-center min-h-screen bg-gradient-to-br from-sacred-chandan via-white to-sacred-haldi/10">
         <div className="bg-white/70 backdrop-blur-md rounded-2xl p-8 shadow-xl border border-sacred-haldi/20">
-          <h2 className="text-2xl font-bold text-sacred-kumkum mb-4">॥ Sacred Connection Required ॥</h2>
-          <p className="text-sacred-rudraksha/80">Please login to begin your spiritual journey</p>
+          <h2 className="text-2xl font-bold text-sacred-kumkum mb-4">
+            ॥ Sacred Connection Required ॥
+          </h2>
+          <p className="text-sacred-rudraksha/80">
+            Please login to begin your spiritual journey
+          </p>
         </div>
       </div>
     );
   }
 
+  // 6) Render the Page
   return (
     <main className="min-h-screen bg-gradient-to-br from-sacred-chandan via-white to-sacred-haldi/10 relative">
       {/* Sacred Om Pattern Background */}
@@ -150,7 +196,7 @@ export default function ConsultAstro(props: any) {
           </Alert>
         )}
 
-        {/* Chat History Section with Enhanced Sacred Styling */}
+        {/* ========== Chat History Section ========== */}
         <div className="mb-8">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -190,7 +236,10 @@ export default function ConsultAstro(props: any) {
                       {session.messages.map((msg) => (
                         <motion.div
                           key={msg.id}
-                          initial={{ opacity: 0, x: msg.senderId === user._id ? 20 : -20 }}
+                          initial={{
+                            opacity: 0,
+                            x: msg.senderId === user._id ? 20 : -20,
+                          }}
                           animate={{ opacity: 1, x: 0 }}
                           className={`p-3 rounded-lg max-w-[80%] ${
                             msg.senderId === user._id
@@ -198,7 +247,13 @@ export default function ConsultAstro(props: any) {
                               : 'bg-sacred-chandan/50 border border-sacred-rudraksha/20'
                           }`}
                         >
-                          <div className={msg.senderId === user._id ? 'text-sacred-kumkum' : 'text-sacred-rudraksha'}>
+                          <div
+                            className={
+                              msg.senderId === user._id
+                                ? 'text-sacred-kumkum'
+                                : 'text-sacred-rudraksha'
+                            }
+                          >
                             {msg.text}
                           </div>
                           <div className="text-xs text-sacred-rudraksha/50 mt-1">
@@ -218,7 +273,7 @@ export default function ConsultAstro(props: any) {
           )}
         </div>
 
-        {/* Current Chat Section with Sacred Styling */}
+        {/* ========== Current Chat Section ========== */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -232,7 +287,11 @@ export default function ConsultAstro(props: any) {
               {astrologer && <span className="ml-1">with {astrologer.name}</span>}
             </h2>
           </div>
-          <Chat astrologerId={id} astrologerName={astrologer?.name || 'Astrologer'} />
+          {/* Render the real-time Chat component */}
+          <Chat 
+            astrologerId={id} 
+            astrologerName={astrologer?.name || 'Astrologer'} 
+          />
         </motion.div>
       </div>
     </main>

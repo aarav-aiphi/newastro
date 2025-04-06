@@ -1,10 +1,20 @@
-'use client'
+'use client';
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { BackgroundBeams } from '@/components/ui/background-beams';
-import { Container, Grid, Typography, Avatar, Button, Chip, Box, CircularProgress, Alert } from '@mui/material';
-import { Star, Clock, MessageCircle, Phone } from 'lucide-react';
+import {
+  Container,
+  Grid,
+  Typography,
+  Avatar,
+  Button,
+  Chip,
+  Box,
+  CircularProgress,
+  Alert
+} from '@mui/material';
+import { Star, MessageCircle, Phone } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import { SparklesCore } from '@/components/ui/sparkles';
@@ -36,112 +46,87 @@ interface Astrologer {
 }
 
 export default function ConsultAstro() {
+  // 1. Express server base URL from env
+  const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+  // 2. Local states
   const [astrologers, setAstrologers] = useState<Astrologer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // 3. Auth and router
   const { user } = useAuth();
   const router = useRouter();
-  const API_URL = "/api/connect";
 
-  useEffect(() => {
-    async function testApiConnection() {
-      try {
-        const response = await fetch('/api/test', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        });
-        
-        const data = await response.json();
-        console.log('API test response:', data);
-        
-        // Check if either environment variable or hardcoded URI is available
-        if (!data.env.hasMongoDB && !data.env.hasHardcodedUri) {
-          setError('MongoDB connection string is not configured on the server.');
-          setLoading(false);
-          return false;
+  // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  // Fetch all verified astrologers (GET /api/astrologers)
+  // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  const fetchAstrologers = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token'); // use stored token
+      console.log('Fetching astrologers from:', `${BASE_URL}/api/astrologers`);
+
+      const response = await fetch(`${BASE_URL}/api/astrologers`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          // Add Bearer token here if required by backend
+          Authorization: `Bearer ${token}`
         }
-        
-        return true;
-      } catch (error) {
-        console.error('Error testing API connection:', error);
-        setError('Cannot connect to API. Please check if the server is running.');
-        setLoading(false);
-        return false;
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        console.error('API error response:', errorData);
+        throw new Error(`Failed to fetch astrologers: ${response.status} ${response.statusText}`);
       }
-    }
-    
-    async function fetchAstrologers() {
-      try {
-        setLoading(true);
-        
-        // Test API connection first
-        const isApiWorking = await testApiConnection();
-        if (!isApiWorking) return;
-        
-        console.log('Fetching astrologers data...');
-        const response = await fetch('/api/astrologers', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        });
-  
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => null);
-          console.error('API error response:', errorData);
-          throw new Error(`Failed to fetch astrologers: ${response.status} ${response.statusText}`);
-        }
-  
-        const data = await response.json();
-        console.log('Fetched astrologers:', data);
-        
-        // Check if we got an array or an object with a message
-        if (Array.isArray(data)) {
-          setAstrologers(data);
-          if (data.length === 0) {
-            setError('No astrologers found in the database. You may need to seed the database with sample data.');
-          } else {
-            setError(null);
-          }
-        } else if (data.message && data.astrologers) {
-          // We got a response with a message and empty astrologers array
-          setAstrologers(data.astrologers);
-          setError(data.message);
+
+      const data = await response.json();
+      console.log('Fetched astrologers:', data);
+
+      if (Array.isArray(data)) {
+        setAstrologers(data);
+        if (data.length === 0) {
+          setError('No astrologers found in the database. You may need to seed the database with sample data.');
         } else {
-          // Unexpected response format
-          setAstrologers([]);
-          setError('Received unexpected data format from the server.');
+          setError(null);
         }
-      } catch (error) {
-        console.error('Error fetching astrologers:', error);
-        setError('Failed to load astrologers. Please try again later.');
-      } finally {
-        setLoading(false);
+      } else {
+        setAstrologers([]);
+        setError('Received unexpected data format from the server.');
       }
+    } catch (err) {
+      console.error('Error fetching astrologers:', err);
+      setError('Failed to load astrologers. Please try again later.');
+    } finally {
+      setLoading(false);
     }
-  
-    fetchAstrologers();
-  }, []);
-  
+  };
+
+  // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  // (Optional) If you have a route for seeding the database
+  // e.g. GET /api/seed-astrologers
+  // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   const seedDatabase = async () => {
     try {
       setLoading(true);
       setError('Seeding database with sample data...');
-      
-      const response = await fetch('/api/seed-astrologers', {
+      const token = localStorage.getItem('token');
+
+      const response = await fetch(`${BASE_URL}/api/seed-astrologers`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-        },
+          Authorization: `Bearer ${token}`
+        }
       });
-      
+
       const data = await response.json();
       console.log('Seed response:', data);
-      
+
       if (data.success) {
-        // Refetch astrologers after seeding
+        // Refetch after seeding
         fetchAstrologers();
       } else {
         setError(`Failed to seed database: ${data.error}`);
@@ -153,59 +138,23 @@ export default function ConsultAstro() {
       setLoading(false);
     }
   };
-  
-  // Add the fetchAstrologers function to the component scope
-  const fetchAstrologers = async () => {
-    try {
-      setLoading(true);
-      
-      console.log('Fetching astrologers data...');
-      const response = await fetch('/api/astrologers', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        console.error('API error response:', errorData);
-        throw new Error(`Failed to fetch astrologers: ${response.status} ${response.statusText}`);
-      }
+  // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  // On mount: fetch astrologers
+  // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  useEffect(() => {
+    fetchAstrologers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-      const data = await response.json();
-      console.log('Fetched astrologers:', data);
-      
-      // Check if we got an array or an object with a message
-      if (Array.isArray(data)) {
-        setAstrologers(data);
-        if (data.length === 0) {
-          setError('No astrologers found in the database. You may need to seed the database with sample data.');
-        } else {
-          setError(null);
-        }
-      } else if (data.message && data.astrologers) {
-        // We got a response with a message and empty astrologers array
-        setAstrologers(data.astrologers);
-        setError(data.message);
-      } else {
-        // Unexpected response format
-        setAstrologers([]);
-        setError('Received unexpected data format from the server.');
-      }
-    } catch (error) {
-      console.error('Error fetching astrologers:', error);
-      setError('Failed to load astrologers. Please try again later.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  // Handlers for each button
+  // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   const handleViewProfile = (astrologerId: string) => {
     router.push(`/astrologer/${astrologerId}`);
   };
 
-  const handleChat = async (astrologerId: string) => {
+  const handleChat = (astrologerId: string) => {
     if (!user) {
       router.push('/sign-in');
       return;
@@ -213,7 +162,7 @@ export default function ConsultAstro() {
     router.push(`/consult-astro/${astrologerId}`);
   };
 
-  const handleCall = async (astrologerId: string) => {
+  const handleCall = (astrologerId: string) => {
     if (!user) {
       router.push('/sign-in');
       return;
@@ -221,10 +170,13 @@ export default function ConsultAstro() {
     router.push(`/call/${astrologerId}`);
   };
 
+  // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  // Render
+  // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   return (
     <main className="min-h-screen bg-gradient-to-br from-sacred-sandal via-white to-sacred-saffron/10 relative overflow-hidden">
       {/* Sacred Mandala Background */}
-      <div className="absolute inset-0 opacity-5"></div>
+      <div className="absolute inset-0 opacity-5" />
       <div className="absolute inset-0 bg-[url('/mandala-pattern.png')] bg-repeat opacity-20" />
 
       {/* Decorative Elements */}
@@ -235,15 +187,17 @@ export default function ConsultAstro() {
       </div>
 
       <BackgroundBeams className="opacity-25" />
-      
+
       <Container maxWidth="lg" className="relative z-10 py-12">
-        {/* Enhanced Header Section */}
+        {/* Header Section */}
         <div className="text-center mb-16">
           <div className="relative inline-block mb-6">
-            <div className="relative bg-white/80 backdrop-blur-sm rounded-full px-8 py-2 border-2 border-sacred-gold/20
-                          shadow-[0_0_15px_rgba(212,175,55,0.3)] hover:shadow-[0_0_20px_rgba(212,175,55,0.5)]
-                          transition-all duration-500">
-              <motion.span 
+            <div
+              className="relative bg-white/80 backdrop-blur-sm rounded-full px-8 py-2 border-2 border-sacred-gold/20
+                         shadow-[0_0_15px_rgba(212,175,55,0.3)] hover:shadow-[0_0_20px_rgba(212,175,55,0.5)]
+                         transition-all duration-500"
+            >
+              <motion.span
                 className="inline-block text-lg md:text-xl bg-gradient-to-r from-sacred-copper via-sacred-gold to-sacred-vermilion
                            bg-clip-text text-transparent font-semibold tracking-wide"
                 whileHover={{ scale: 1.05 }}
@@ -256,7 +210,14 @@ export default function ConsultAstro() {
           </div>
 
           <motion.div className="relative h-[40px] w-full mb-8">
-            <SparklesCore background="transparent" minSize={0.4} maxSize={1} particleDensity={1200} className="w-full h-full" particleColor="#ff8303" />
+            <SparklesCore
+              background="transparent"
+              minSize={0.4}
+              maxSize={1}
+              particleDensity={1200}
+              className="w-full h-full"
+              particleColor="#ff8303"
+            />
           </motion.div>
 
           <GlowingStarsText>
@@ -266,21 +227,25 @@ export default function ConsultAstro() {
           </GlowingStarsText>
         </div>
 
+        {/* Loading or Error */}
         {loading ? (
           <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
             <CircularProgress sx={{ color: 'var(--sacred-gold)' }} />
           </Box>
         ) : error ? (
           <Box>
-            <Alert severity="error" className="bg-red-50 border border-red-200 mb-4">{error}</Alert>
+            <Alert severity="error" className="bg-red-50 border border-red-200 mb-4">
+              {error}
+            </Alert>
+            {/* If no astrologers, show seed button */}
             {error.includes('No astrologers found') && (
               <Box display="flex" justifyContent="center" mt={2}>
-                <Button 
-                  variant="contained" 
+                <Button
+                  variant="contained"
                   onClick={seedDatabase}
                   className="bg-gradient-to-r from-sacred-vermilion via-sacred-gold to-sacred-copper
-                           text-white font-semibold hover:shadow-lg hover:shadow-sacred-gold/20
-                           transition-all duration-300"
+                             text-white font-semibold hover:shadow-lg hover:shadow-sacred-gold/20
+                             transition-all duration-300"
                 >
                   Seed Database with Sample Data
                 </Button>
@@ -297,18 +262,21 @@ export default function ConsultAstro() {
                   transition={{ duration: 0.5 }}
                   whileHover={{ y: -5 }}
                 >
-                  <div className="relative bg-white/70 backdrop-blur-md rounded-2xl p-6 shadow-xl
-                                border border-sacred-gold/20 hover:shadow-2xl hover:shadow-sacred-gold/20
-                                transition-all duration-500 group">
-                    {/* Decorative Corner Ornaments */}
+                  <div
+                    className="relative bg-white/70 backdrop-blur-md rounded-2xl p-6 shadow-xl
+                               border border-sacred-gold/20 hover:shadow-2xl hover:shadow-sacred-gold/20
+                               transition-all duration-500 group"
+                  >
+                    {/* Decorative Corners */}
                     <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-sacred-gold/30 rounded-tl-2xl" />
                     <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-sacred-gold/30 rounded-tr-2xl" />
-                    
+
+                    {/* Online/Offline chip */}
                     <Chip
                       label={astrologer.isOnline ? 'Online' : 'Offline'}
                       className={`absolute top-4 right-4 ${
-                        astrologer.isOnline 
-                          ? 'bg-green-500/10 text-green-600 border border-green-200' 
+                        astrologer.isOnline
+                          ? 'bg-green-500/10 text-green-600 border border-green-200'
                           : 'bg-gray-500/10 text-gray-600 border border-gray-200'
                       }`}
                       size="small"
@@ -317,10 +285,10 @@ export default function ConsultAstro() {
                     <Box display="flex" alignItems="center" mb={3}>
                       <Avatar
                         src={astrologer.profileImage}
-                        sx={{ 
-                          width: 70, 
-                          height: 70, 
-                          border: '2px solid', 
+                        sx={{
+                          width: 70,
+                          height: 70,
+                          border: '2px solid',
                           borderColor: 'rgba(212,175,55,0.3)',
                           boxShadow: '0 0 15px rgba(212,175,55,0.2)'
                         }}
@@ -346,6 +314,7 @@ export default function ConsultAstro() {
                       ))}
                     </Box>
 
+                    {/* Rating */}
                     <Box display="flex" alignItems="center" mb={3}>
                       <Star className="text-sacred-gold w-5 h-5 mr-1" />
                       <Typography variant="body2" className="text-sacred-copper">
@@ -353,6 +322,7 @@ export default function ConsultAstro() {
                       </Typography>
                     </Box>
 
+                    {/* Price */}
                     <Box className="flex justify-between items-end mb-4">
                       <Box>
                         <Typography variant="h6" className="text-sacred-vermilion font-bold">
@@ -366,13 +336,14 @@ export default function ConsultAstro() {
                       </Box>
                     </Box>
 
+                    {/* Action Buttons */}
                     <div className="grid grid-cols-3 gap-2">
                       <Button
                         variant="contained"
                         onClick={() => handleViewProfile(astrologer._id)}
                         className="bg-gradient-to-r from-sacred-copper to-sacred-gold
-                                 text-white font-semibold hover:shadow-lg hover:shadow-sacred-gold/20
-                                 transition-all duration-300"
+                                   text-white font-semibold hover:shadow-lg hover:shadow-sacred-gold/20
+                                   transition-all duration-300"
                         size="small"
                       >
                         View Profile
@@ -382,8 +353,8 @@ export default function ConsultAstro() {
                         startIcon={<MessageCircle size={16} />}
                         onClick={() => handleChat(astrologer._id)}
                         className="bg-gradient-to-r from-sacred-gold to-sacred-vermilion
-                                 text-white font-semibold hover:shadow-lg hover:shadow-sacred-gold/20
-                                 transition-all duration-300"
+                                   text-white font-semibold hover:shadow-lg hover:shadow-sacred-gold/20
+                                   transition-all duration-300"
                         size="small"
                       >
                         Chat
@@ -393,8 +364,8 @@ export default function ConsultAstro() {
                         startIcon={<Phone size={16} />}
                         onClick={() => handleCall(astrologer._id)}
                         className="bg-gradient-to-r from-sacred-vermilion to-sacred-copper
-                                 text-white font-semibold hover:shadow-lg hover:shadow-sacred-gold/20
-                                 transition-all duration-300"
+                                   text-white font-semibold hover:shadow-lg hover:shadow-sacred-gold/20
+                                   transition-all duration-300"
                         size="small"
                       >
                         Call
@@ -410,4 +381,3 @@ export default function ConsultAstro() {
     </main>
   );
 }
-
